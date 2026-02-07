@@ -26,18 +26,18 @@ Models download automatically from Hugging Face on first use and are cached loca
 
 ## Setup
 
-Requires Python 3.11 (mlx-audio has compatibility issues with 3.12+).
+Requires Python 3.11 (mlx-audio has compatibility issues with 3.12+) and ffmpeg (used by mlx-audio to decode uploaded audio files for voice cloning).
 
 ```bash
-# Install Python 3.11 if needed
-brew install python@3.11
+# Install system dependencies
+brew install python@3.11 ffmpeg
 
 # Clone the repo and create a virtual environment
 cd tts-app
 python3.11 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 ```
 
