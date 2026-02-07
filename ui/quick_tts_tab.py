@@ -1,6 +1,8 @@
 import gradio as gr
 
-from config import STANDARD_MODEL_NAMES, MODELS, MODEL_VOICES, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX, is_custom_voice_model
+from config import STANDARD_MODEL_NAMES, MODELS, MODEL_VOICES, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX, TEXT_CHAR_LIMIT_WARNING, is_custom_voice_model
+from services.audio_utils import maybe_convert_to_mp3
+from services.model_manager import manager
 from services.tts_engine import generate_speech, clone_voice
 from services.voice_library import list_voices, get_voice
 
@@ -31,6 +33,7 @@ def create_quick_tts_tab():
     with gr.Tab("Quick TTS"):
         gr.Markdown("### Text to Speech")
         gr.Markdown("Type text and generate speech with a preset voice.")
+        status_text = gr.Textbox(label="Status", interactive=False, value="", visible=False)
 
         with gr.Row():
             with gr.Column(scale=2):
@@ -56,6 +59,12 @@ def create_quick_tts_tab():
                     label="Base Voice (CustomVoice only)",
                     visible=_should_show_base_voice(STANDARD_MODEL_NAMES[0], initial_voice),
                 )
+                instruct_input = gr.Textbox(
+                    label="Style Instruction (CustomVoice only)",
+                    placeholder="e.g. Speak with warmth and gentle encouragement",
+                    lines=2,
+                    visible=is_custom_voice_model(STANDARD_MODEL_NAMES[0]),
+                )
                 speed_slider = gr.Slider(
                     minimum=0.5,
                     maximum=2.0,
@@ -63,6 +72,10 @@ def create_quick_tts_tab():
                     step=0.1,
                     label="Speed",
                 )
+                with gr.Row():
+                    format_radio = gr.Radio(
+                        choices=["WAV", "MP3"], value="WAV", label="Output Format",
+                    )
                 generate_btn = gr.Button("Generate", variant="primary")
 
             with gr.Column(scale=1):
@@ -75,12 +88,13 @@ def create_quick_tts_tab():
             return (
                 gr.Dropdown(choices=voices, value=default),
                 gr.Dropdown(visible=_should_show_base_voice(model_name, default)),
+                gr.Textbox(visible=is_custom_voice_model(model_name)),
             )
 
         model_dropdown.change(
             fn=update_voices,
             inputs=[model_dropdown],
-            outputs=[voice_dropdown, base_voice_dropdown],
+            outputs=[voice_dropdown, base_voice_dropdown, instruct_input],
         )
 
         # Show/hide base voice when voice selection changes
@@ -103,11 +117,15 @@ def create_quick_tts_tab():
         )
 
         # Generate speech
-        def on_generate(text, model_name, voice, base_voice, speed):
+        def on_generate(text, model_name, voice, base_voice, instruct, speed, output_format):
             if not text.strip():
                 raise gr.Error("Please enter some text.")
 
-            # Check if this is a saved voice
+            if len(text) > TEXT_CHAR_LIMIT_WARNING:
+                gr.Warning(f"Text is {len(text):,} chars. Inputs over {TEXT_CHAR_LIMIT_WARNING:,} may be slow.")
+
+            # Determine the actual model that will be used
+            effective_model = model_name
             if _is_saved_voice(voice):
                 voice_name = voice[len(SAVED_VOICE_PREFIX):]
                 saved = list_voices()
@@ -118,29 +136,46 @@ def create_quick_tts_tab():
                         break
                 if not slug:
                     raise gr.Error(f"Saved voice '{voice_name}' not found.")
+                voice_data = get_voice(slug)
+                effective_model = voice_data.get("model", model_name)
+
+            # Stage 1: Load model if needed
+            if not manager.is_loaded(effective_model):
+                yield gr.update(value=f"Loading model {effective_model}...", visible=True), gr.update()
+                manager.get_model(effective_model)
+
+            # Stage 2: Generate audio
+            yield gr.update(value="Generating audio...", visible=True), gr.update()
+
+            if _is_saved_voice(voice):
                 try:
-                    voice_data = get_voice(slug)
                     path = clone_voice(
                         text,
-                        voice_data.get("model", model_name),
+                        effective_model,
                         voice_data["ref_audio_path"],
                         voice_data.get("ref_text", ""),
                         voice=base_voice,
+                        instruct=instruct,
                     )
-                    return path
                 except Exception as e:
                     raise gr.Error(f"Generation with saved voice failed: {e}")
+            else:
+                try:
+                    path = generate_speech(text, model_name, voice, speed, instruct=instruct)
+                except gr.Error:
+                    raise
+                except Exception as e:
+                    raise gr.Error(f"Generation failed: {e}")
 
-            try:
-                path = generate_speech(text, model_name, voice, speed)
-                return path
-            except gr.Error:
-                raise
-            except Exception as e:
-                raise gr.Error(f"Generation failed: {e}")
+            # Stage 3: Convert format if needed
+            if output_format == "MP3":
+                yield gr.update(value="Converting to MP3...", visible=True), gr.update()
+                path = maybe_convert_to_mp3(path, output_format)
+
+            yield gr.update(value="", visible=False), path
 
         generate_btn.click(
             fn=on_generate,
-            inputs=[text_input, model_dropdown, voice_dropdown, base_voice_dropdown, speed_slider],
-            outputs=[audio_output],
+            inputs=[text_input, model_dropdown, voice_dropdown, base_voice_dropdown, instruct_input, speed_slider, format_radio],
+            outputs=[status_text, audio_output],
         )

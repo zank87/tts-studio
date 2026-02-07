@@ -1,6 +1,8 @@
 import gradio as gr
 
-from config import CLONING_MODEL_NAMES, QWEN3_VOICE_LIST, is_custom_voice_model
+from config import CLONING_MODEL_NAMES, QWEN3_VOICE_LIST, TEXT_CHAR_LIMIT_WARNING, is_custom_voice_model
+from services.audio_utils import maybe_convert_to_mp3
+from services.model_manager import manager
 from services.tts_engine import clone_voice
 from services.voice_library import list_voices, get_voice, save_voice, delete_voice
 
@@ -17,6 +19,7 @@ def create_voice_clone_tab():
             "Upload a reference audio clip (5-30 seconds recommended), "
             "optionally provide its transcript, and generate new speech in that voice."
         )
+        status_text = gr.Textbox(label="Status", interactive=False, value="", visible=False)
 
         # ── Saved Voices row ──────────────────────────────────────────────
         gr.Markdown("#### Saved Voices")
@@ -53,11 +56,21 @@ def create_voice_clone_tab():
                     label="Base Voice (CustomVoice only)",
                     visible=is_custom_voice_model(CLONING_MODEL_NAMES[0]),
                 )
+                instruct_input = gr.Textbox(
+                    label="Style Instruction (CustomVoice only)",
+                    placeholder="e.g. Speak with warmth and gentle encouragement",
+                    lines=2,
+                    visible=is_custom_voice_model(CLONING_MODEL_NAMES[0]),
+                )
                 text_input = gr.Textbox(
                     label="Text to Synthesize",
                     placeholder="Enter text for the cloned voice to speak...",
                     lines=5,
                 )
+                with gr.Row():
+                    format_radio = gr.Radio(
+                        choices=["WAV", "MP3"], value="WAV", label="Output Format",
+                    )
                 generate_btn = gr.Button("Generate", variant="primary")
 
             with gr.Column(scale=1):
@@ -77,12 +90,12 @@ def create_voice_clone_tab():
 
         def on_model_change(model_name):
             visible = is_custom_voice_model(model_name)
-            return gr.Dropdown(visible=visible)
+            return gr.Dropdown(visible=visible), gr.Textbox(visible=visible)
 
         model_dropdown.change(
             fn=on_model_change,
             inputs=[model_dropdown],
-            outputs=[base_voice_dropdown],
+            outputs=[base_voice_dropdown, instruct_input],
         )
 
         def on_load(slug):
@@ -142,23 +155,42 @@ def create_voice_clone_tab():
             outputs=[saved_voice_dropdown],
         )
 
-        def on_generate(ref_audio_path, ref_text_val, model_name, base_voice, text):
+        def on_generate(ref_audio_path, ref_text_val, model_name, base_voice, instruct, text, output_format):
             if not text.strip():
                 raise gr.Error("Please enter text to synthesize.")
             if not ref_audio_path:
                 raise gr.Error("Please upload reference audio.")
+
+            if len(text) > TEXT_CHAR_LIMIT_WARNING:
+                gr.Warning(f"Text is {len(text):,} chars. Inputs over {TEXT_CHAR_LIMIT_WARNING:,} may be slow.")
+
+            # Stage 1: Load model if needed
+            if not manager.is_loaded(model_name):
+                yield gr.update(value=f"Loading model {model_name}...", visible=True), gr.update()
+                manager.get_model(model_name)
+
+            # Stage 2: Generate audio
+            yield gr.update(value="Generating audio...", visible=True), gr.update()
+
             try:
                 path = clone_voice(
-                    text, model_name, ref_audio_path, ref_text_val, voice=base_voice,
+                    text, model_name, ref_audio_path, ref_text_val,
+                    voice=base_voice, instruct=instruct,
                 )
-                return path
             except gr.Error:
                 raise
             except Exception as e:
                 raise gr.Error(f"Voice cloning failed: {e}")
 
+            # Stage 3: Convert format if needed
+            if output_format == "MP3":
+                yield gr.update(value="Converting to MP3...", visible=True), gr.update()
+                path = maybe_convert_to_mp3(path, output_format)
+
+            yield gr.update(value="", visible=False), path
+
         generate_btn.click(
             fn=on_generate,
-            inputs=[ref_audio, ref_text, model_dropdown, base_voice_dropdown, text_input],
-            outputs=[audio_output],
+            inputs=[ref_audio, ref_text, model_dropdown, base_voice_dropdown, instruct_input, text_input, format_radio],
+            outputs=[status_text, audio_output],
         )

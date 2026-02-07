@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import zipfile
 
@@ -6,6 +7,34 @@ import numpy as np
 import soundfile as sf
 
 from config import DEFAULT_SAMPLE_RATE, OUTPUT_DIR
+
+
+def check_ffmpeg() -> bool:
+    """Return True if ffmpeg is available on PATH."""
+    return shutil.which("ffmpeg") is not None
+
+
+def convert_to_mp3(wav_path: str, mp3_path: str | None = None, bitrate: str = "192k") -> str:
+    """Convert a WAV file to MP3 using ffmpeg. Returns the MP3 path."""
+    if not check_ffmpeg():
+        raise RuntimeError(
+            "ffmpeg is not installed. Install with `brew install ffmpeg`."
+        )
+    if mp3_path is None:
+        mp3_path = os.path.splitext(wav_path)[0] + ".mp3"
+    subprocess.run(
+        ["ffmpeg", "-i", wav_path, "-codec:a", "libmp3lame", "-b:a", bitrate, "-y", mp3_path],
+        capture_output=True,
+        check=True,
+    )
+    return mp3_path
+
+
+def maybe_convert_to_mp3(wav_path: str, output_format: str) -> str:
+    """Convert to MP3 if requested, otherwise return wav_path unchanged."""
+    if output_format == "MP3":
+        return convert_to_mp3(wav_path)
+    return wav_path
 
 
 def ensure_wav(path: str) -> str:

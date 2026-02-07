@@ -15,6 +15,7 @@ def generate_speech(
     model_name: str,
     voice: str,
     speed: float = 1.0,
+    instruct: str = "",
 ) -> str:
     """Generate speech from text using a preset voice. Returns path to WAV file."""
     if not text.strip():
@@ -38,11 +39,10 @@ def generate_speech(
 
     elif is_qwen3_model(model_name):
         language = _qwen3_language(voice)
-        for result in model.generate(
-            text=text,
-            voice=voice,
-            language=language,
-        ):
+        kwargs = {"text": text, "voice": voice, "language": language}
+        if instruct.strip() and is_custom_voice_model(model_name):
+            kwargs["instruct"] = instruct.strip()
+        for result in model.generate(**kwargs):
             audio_chunks.append(np.array(result.audio))
 
     elif model_name == "CSM-1B":
@@ -67,11 +67,13 @@ def clone_voice(
     ref_audio_path: str,
     ref_text: str = "",
     voice: str = "Chelsie",
+    instruct: str = "",
 ) -> str:
     """Clone a voice from reference audio. Returns path to WAV file.
 
     The voice parameter is required for CustomVoice models (base speaker name).
     It is ignored for Base and CSM models.
+    The instruct parameter controls emotion/style for CustomVoice models.
     """
     if not text.strip():
         raise ValueError("Text cannot be empty.")
@@ -91,6 +93,8 @@ def clone_voice(
             kwargs["ref_text"] = ref_text.strip()
         if is_custom_voice_model(model_name):
             kwargs["voice"] = voice
+            if instruct.strip():
+                kwargs["instruct"] = instruct.strip()
         for result in model.generate(**kwargs):
             audio_chunks.append(np.array(result.audio))
 

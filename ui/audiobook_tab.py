@@ -3,10 +3,11 @@ import time
 
 import gradio as gr
 
-from config import STANDARD_MODEL_NAMES, MODELS, MODEL_VOICES, OUTPUT_DIR, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX, is_custom_voice_model
+from config import STANDARD_MODEL_NAMES, MODELS, MODEL_VOICES, OUTPUT_DIR, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX, TEXT_CHAR_LIMIT_WARNING, is_custom_voice_model
 from services.epub_parser import parse_file
+from services.model_manager import manager
 from services.tts_engine import generate_speech, clone_voice
-from services.audio_utils import merge_audio_files, create_zip
+from services.audio_utils import merge_audio_files, create_zip, maybe_convert_to_mp3
 from services.voice_library import list_voices, get_voice
 
 
@@ -65,10 +66,20 @@ def create_audiobook_tab():
                     label="Base Voice (CustomVoice only)",
                     visible=_should_show_base_voice(STANDARD_MODEL_NAMES[0], initial_voice),
                 )
+                instruct_input = gr.Textbox(
+                    label="Style Instruction (CustomVoice only)",
+                    placeholder="e.g. Calm, slow, bedtime story tone",
+                    lines=2,
+                    visible=is_custom_voice_model(STANDARD_MODEL_NAMES[0]),
+                )
                 speed_slider = gr.Slider(
                     minimum=0.5, maximum=2.0, value=1.0, step=0.1,
                     label="Speed",
                 )
+                with gr.Row():
+                    format_radio = gr.Radio(
+                        choices=["WAV", "MP3"], value="WAV", label="Output Format",
+                    )
                 generate_btn = gr.Button("Generate Audiobook", variant="primary")
 
             with gr.Column(scale=1):
@@ -113,12 +124,13 @@ def create_audiobook_tab():
             return (
                 gr.Dropdown(choices=voices, value=default),
                 gr.Dropdown(visible=_should_show_base_voice(model_name, default)),
+                gr.Textbox(visible=is_custom_voice_model(model_name)),
             )
 
         model_dropdown.change(
             fn=update_voices,
             inputs=[model_dropdown],
-            outputs=[voice_dropdown, base_voice_dropdown],
+            outputs=[voice_dropdown, base_voice_dropdown, instruct_input],
         )
 
         # Show/hide base voice when voice selection changes
@@ -153,12 +165,13 @@ def create_audiobook_tab():
 
         # Generate audiobook
         def on_generate(
-            selected_labels, chapters, model_name, voice, base_voice, speed,
+            selected_labels, chapters, model_name, voice, base_voice, instruct, speed, output_format,
             progress=gr.Progress(),
         ):
             if not selected_labels:
                 gr.Warning("Please select at least one chapter.")
-                return "", gr.File(visible=False)
+                yield "", gr.File(visible=False)
+                return
 
             # Resolve voice once before the loop
             try:
@@ -178,12 +191,27 @@ def create_audiobook_tab():
             selected_chapters = [ch for ch in chapters if ch["order"] in selected_orders]
             if not selected_chapters:
                 gr.Warning("No valid chapters selected.")
-                return "", gr.File(visible=False)
+                yield "", gr.File(visible=False)
+                return
+
+            # Warn about total content length
+            total_chars = sum(len(ch["content"]) for ch in selected_chapters)
+            if total_chars > TEXT_CHAR_LIMIT_WARNING:
+                gr.Warning(f"Total text is {total_chars:,} chars. Inputs over {TEXT_CHAR_LIMIT_WARNING:,} may be slow.")
+
+            # Pre-load model if needed
+            effective_model = model_name
+            if is_saved and voice_data:
+                effective_model = voice_data.get("model", model_name)
+            if not manager.is_loaded(effective_model):
+                yield f"Loading model {effective_model}...", gr.File(visible=False)
+                manager.get_model(effective_model)
 
             timestamp = int(time.time())
             chapter_paths = []
             log_lines = []
             total = len(selected_chapters)
+            ext = "mp3" if output_format == "MP3" else "wav"
 
             for i, ch in enumerate(progress.tqdm(selected_chapters, desc="Generating chapters")):
                 title = ch["title"]
@@ -205,9 +233,10 @@ def create_audiobook_tab():
                                 voice_data["ref_audio_path"],
                                 voice_data.get("ref_text", ""),
                                 voice=base_voice,
+                                instruct=instruct,
                             )
                         else:
-                            path = generate_speech(chunk, model_name, voice, speed)
+                            path = generate_speech(chunk, model_name, voice, speed, instruct=instruct)
                         chunk_paths.append(path)
 
                     if chunk_paths:
@@ -222,6 +251,7 @@ def create_audiobook_tab():
                             for cp in chunk_paths:
                                 if os.path.exists(cp):
                                     os.remove(cp)
+                        chapter_path = maybe_convert_to_mp3(chapter_path, output_format)
                         chapter_paths.append(chapter_path)
                         log_lines.append(f"  Done: {title}")
                     else:
@@ -233,20 +263,21 @@ def create_audiobook_tab():
 
             if not chapter_paths:
                 log_lines.append("\nNo chapters were generated successfully.")
-                return "\n".join(log_lines), gr.File(visible=False)
+                yield "\n".join(log_lines), gr.File(visible=False)
+                return
 
             # Create ZIP
             zip_path = os.path.join(OUTPUT_DIR, f"audiobook_{timestamp}.zip")
             create_zip(chapter_paths, zip_path)
             log_lines.append(f"\nDone! {len(chapter_paths)} chapters packaged into ZIP.")
 
-            return "\n".join(log_lines), gr.File(value=zip_path, visible=True)
+            yield "\n".join(log_lines), gr.File(value=zip_path, visible=True)
 
         generate_btn.click(
             fn=on_generate,
             inputs=[
                 chapter_checkboxes, chapters_state,
-                model_dropdown, voice_dropdown, base_voice_dropdown, speed_slider,
+                model_dropdown, voice_dropdown, base_voice_dropdown, instruct_input, speed_slider, format_radio,
             ],
             outputs=[status_log, zip_output],
         )

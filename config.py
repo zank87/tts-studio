@@ -12,6 +12,7 @@ os.makedirs(VOICES_DIR, exist_ok=True)
 SAVED_VOICE_PREFIX = "\U0001f3a4 "
 
 DEFAULT_SAMPLE_RATE = 24000
+TEXT_CHAR_LIMIT_WARNING = 10_000
 
 # ── Model Definitions ──────────────────────────────────────────────────────────
 
