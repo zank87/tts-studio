@@ -1,0 +1,7 @@
+mlx-audio
+misaki[en]
+gradio>=5.0
+ebooklib
+beautifulsoup4
+soundfile
+numpy
