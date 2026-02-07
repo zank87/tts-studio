@@ -64,8 +64,13 @@ def clone_voice(
     model_name: str,
     ref_audio_path: str,
     ref_text: str = "",
+    voice: str = "Chelsie",
 ) -> str:
-    """Clone a voice from reference audio. Returns path to WAV file."""
+    """Clone a voice from reference audio. Returns path to WAV file.
+
+    The voice parameter is required for CustomVoice (base speaker name).
+    It is ignored for Qwen3-TTS-Base.
+    """
     if not text.strip():
         raise ValueError("Text cannot be empty.")
     if not ref_audio_path or not os.path.exists(ref_audio_path):
@@ -85,7 +90,7 @@ def clone_voice(
             audio_chunks.append(np.array(result.audio))
 
     elif model_name == "Qwen3-TTS-CustomVoice":
-        kwargs = {"text": text, "ref_audio": ref_audio_path}
+        kwargs = {"text": text, "ref_audio": ref_audio_path, "voice": voice}
         if ref_text.strip():
             kwargs["ref_text"] = ref_text.strip()
         for result in model.generate(**kwargs):

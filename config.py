@@ -3,9 +3,13 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+VOICES_DIR = os.path.join(BASE_DIR, "voices")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(VOICES_DIR, exist_ok=True)
+
+SAVED_VOICE_PREFIX = "\U0001f3a4 "
 
 DEFAULT_SAMPLE_RATE = 24000
 
