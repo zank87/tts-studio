@@ -1,6 +1,6 @@
 import gradio as gr
 
-from config import ALL_MODEL_NAMES, MODELS, MODEL_VOICES, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX
+from config import STANDARD_MODEL_NAMES, MODELS, MODEL_VOICES, QWEN3_VOICE_LIST, SAVED_VOICE_PREFIX, is_custom_voice_model
 from services.tts_engine import generate_speech, clone_voice
 from services.voice_library import list_voices, get_voice
 
@@ -21,11 +21,11 @@ def _is_saved_voice(voice: str) -> bool:
 
 
 def _should_show_base_voice(model_name: str, voice: str) -> bool:
-    return model_name == "Qwen3-TTS-CustomVoice" and _is_saved_voice(voice)
+    return is_custom_voice_model(model_name) and _is_saved_voice(voice)
 
 
 def create_quick_tts_tab():
-    initial_choices = _build_voice_choices(ALL_MODEL_NAMES[0])
+    initial_choices = _build_voice_choices(STANDARD_MODEL_NAMES[0])
     initial_voice = initial_choices[0] if initial_choices else None
 
     with gr.Tab("Quick TTS"):
@@ -41,8 +41,8 @@ def create_quick_tts_tab():
                 )
                 with gr.Row():
                     model_dropdown = gr.Dropdown(
-                        choices=ALL_MODEL_NAMES,
-                        value=ALL_MODEL_NAMES[0],
+                        choices=STANDARD_MODEL_NAMES,
+                        value=STANDARD_MODEL_NAMES[0],
                         label="Model",
                     )
                     voice_dropdown = gr.Dropdown(
@@ -54,7 +54,7 @@ def create_quick_tts_tab():
                     choices=QWEN3_VOICE_LIST,
                     value=QWEN3_VOICE_LIST[0],
                     label="Base Voice (CustomVoice only)",
-                    visible=_should_show_base_voice(ALL_MODEL_NAMES[0], initial_voice),
+                    visible=_should_show_base_voice(STANDARD_MODEL_NAMES[0], initial_voice),
                 )
                 speed_slider = gr.Slider(
                     minimum=0.5,

@@ -1,6 +1,6 @@
 import gradio as gr
 
-from config import CLONING_MODEL_NAMES, QWEN3_VOICE_LIST
+from config import CLONING_MODEL_NAMES, QWEN3_VOICE_LIST, is_custom_voice_model
 from services.tts_engine import clone_voice
 from services.voice_library import list_voices, get_voice, save_voice, delete_voice
 
@@ -51,7 +51,7 @@ def create_voice_clone_tab():
                     choices=QWEN3_VOICE_LIST,
                     value=QWEN3_VOICE_LIST[0],
                     label="Base Voice (CustomVoice only)",
-                    visible=(CLONING_MODEL_NAMES[0] == "Qwen3-TTS-CustomVoice"),
+                    visible=is_custom_voice_model(CLONING_MODEL_NAMES[0]),
                 )
                 text_input = gr.Textbox(
                     label="Text to Synthesize",
@@ -76,7 +76,7 @@ def create_voice_clone_tab():
         # ── Handlers ─────────────────────────────────────────────────────
 
         def on_model_change(model_name):
-            visible = model_name == "Qwen3-TTS-CustomVoice"
+            visible = is_custom_voice_model(model_name)
             return gr.Dropdown(visible=visible)
 
         model_dropdown.change(
@@ -94,7 +94,7 @@ def create_voice_clone_tab():
                 raise gr.Error("Saved voice not found. It may have been deleted.")
             model = voice.get("model", CLONING_MODEL_NAMES[0])
             base_voice = voice.get("base_voice", QWEN3_VOICE_LIST[0])
-            show_base = model == "Qwen3-TTS-CustomVoice"
+            show_base = is_custom_voice_model(model)
             return (
                 voice["ref_audio_path"],
                 voice.get("ref_text", ""),

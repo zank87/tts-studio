@@ -1,10 +1,50 @@
 import os
+import subprocess
 import zipfile
 
 import numpy as np
 import soundfile as sf
 
 from config import DEFAULT_SAMPLE_RATE, OUTPUT_DIR
+
+
+def ensure_wav(path: str) -> str:
+    """Ensure an audio file is in WAV format miniaudio can decode.
+
+    Returns the original path if it's already a valid WAV, otherwise
+    converts it and returns the path to a new WAV file.
+    """
+    # Quick check: if it's already .wav and soundfile can read it, it's fine
+    if path.lower().endswith(".wav"):
+        try:
+            sf.info(path)
+            return path
+        except Exception:
+            pass
+
+    wav_path = os.path.splitext(path)[0] + "_converted.wav"
+
+    # Try soundfile first (handles FLAC, OGG/Vorbis, AIFF, etc.)
+    try:
+        data, sr = sf.read(path, dtype="float32")
+        sf.write(wav_path, data, sr)
+        return wav_path
+    except Exception:
+        pass
+
+    # Fall back to ffmpeg (handles MP3, WebM, Opus, AAC, etc.)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", path, "-ar", "24000", "-ac", "1", "-y", wav_path],
+            capture_output=True,
+            check=True,
+        )
+        return wav_path
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        raise ValueError(
+            f"Could not convert audio file to WAV. "
+            f"Please upload a WAV, MP3, or FLAC file. ({e})"
+        )
 
 
 def save_audio(audio_array, path: str, sample_rate: int = DEFAULT_SAMPLE_RATE) -> str:

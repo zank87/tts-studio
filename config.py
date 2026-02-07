@@ -31,10 +31,43 @@ MODELS = {
         "supports_cloning": True,
         "description": "Cloning with emotion control (~800MB)",
     },
+    "Qwen3-TTS-Base-1.7B": {
+        "repo_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16",
+        "supports_cloning": True,
+        "description": "1.7B base model, higher quality (~3.4GB)",
+    },
+    "Qwen3-TTS-CustomVoice-1.7B": {
+        "repo_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16",
+        "supports_cloning": True,
+        "description": "1.7B cloning with emotion control (~3.4GB)",
+    },
+    "Qwen3-TTS-VoiceDesign": {
+        "repo_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16",
+        "supports_cloning": False,
+        "description": "Design voices from text descriptions (~3.4GB)",
+    },
+    "CSM-1B": {
+        "repo_id": "mlx-community/csm-1b",
+        "supports_cloning": True,
+        "description": "Sesame conversational voice cloning (~2GB)",
+    },
+    "Dia-1.6B": {
+        "repo_id": "mlx-community/Dia-1.6B-bf16",
+        "supports_cloning": False,
+        "description": "Multi-speaker dialogue generation (~3.2GB)",
+    },
 }
 
 ALL_MODEL_NAMES = list(MODELS.keys())
 CLONING_MODEL_NAMES = [k for k, v in MODELS.items() if v["supports_cloning"]]
+
+# Filtered model lists for specific tabs
+STANDARD_MODEL_NAMES = [
+    k for k in MODELS
+    if k not in ("Qwen3-TTS-VoiceDesign", "Dia-1.6B")
+]
+VOICE_DESIGN_MODEL_NAMES = ["Qwen3-TTS-VoiceDesign"]
+DIALOGUE_MODEL_NAMES = ["Dia-1.6B"]
 
 # ── Kokoro Voices ──────────────────────────────────────────────────────────────
 
@@ -90,12 +123,21 @@ for group, voices in QWEN3_VOICES.items():
     for v in voices:
         QWEN3_VOICE_LIST.append(v)
 
+# ── CSM Voices ────────────────────────────────────────────────────────────────
+
+CSM_VOICE_LIST = ["conversational_a", "conversational_b"]
+
 # ── Voice map per model ────────────────────────────────────────────────────────
 
 MODEL_VOICES = {
     "Kokoro-82M": KOKORO_VOICE_LIST,
     "Qwen3-TTS-Base": QWEN3_VOICE_LIST,
     "Qwen3-TTS-CustomVoice": QWEN3_VOICE_LIST,
+    "Qwen3-TTS-Base-1.7B": QWEN3_VOICE_LIST,
+    "Qwen3-TTS-CustomVoice-1.7B": QWEN3_VOICE_LIST,
+    "Qwen3-TTS-VoiceDesign": [],
+    "CSM-1B": CSM_VOICE_LIST,
+    "Dia-1.6B": [],
 }
 
 # ── Kokoro language code lookup ────────────────────────────────────────────────
@@ -109,3 +151,17 @@ def kokoro_lang_code(voice: str) -> str:
     if voice and len(voice) >= 2:
         return prefix_map.get(voice[0], "a")
     return "a"
+
+
+def is_qwen3_model(name: str) -> bool:
+    return name.startswith("Qwen3-TTS-")
+
+
+def is_custom_voice_model(name: str) -> bool:
+    return name in ("Qwen3-TTS-CustomVoice", "Qwen3-TTS-CustomVoice-1.7B")
+
+
+def get_sample_rate(name: str) -> int:
+    if name == "Dia-1.6B":
+        return 44100
+    return DEFAULT_SAMPLE_RATE
